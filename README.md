@@ -1,7 +1,6 @@
 # 📊 Excel Reader FastAPI
 
 ![Docker Pulls](https://img.shields.io/docker/pulls/matheussaleh/excel-reader-fastapi)
-![GitHub Repo stars](https://img.shields.io/github/stars/matheussaleh/excel-reader-fastapi?style=social)
 
 Aplicação backend em **FastAPI** para leitura de planilhas Excel (.xlsx) e persistência dos dados em banco de dados **PostgreSQL**.  
 O projeto segue boas práticas de arquitetura, está **dockerizado** e possui CI/CD integrado com **GitHub Actions** para publicação automática no **Docker Hub**.
