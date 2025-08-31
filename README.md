@@ -1,6 +1,5 @@
 # 📊 Excel Reader FastAPI
 
-![Docker Build](https://github.com/matheussaleh/excel-reader-fastapi/actions/workflows/docker-publish.yml/badge.svg)
 ![Docker Pulls](https://img.shields.io/docker/pulls/matheussaleh/excel-reader-fastapi)
 ![GitHub Repo stars](https://img.shields.io/github/stars/matheussaleh/excel-reader-fastapi?style=social)
 
