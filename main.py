@@ -2,8 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Depends
 from sqlalchemy.orm import Session
 import pandas as pd
 from database import get_db
-from models import Pessoa, Endereco, Militar, Empresa, Atirador, Patente, Filiacao
-from enums import RespostaEnum
+from models import Pessoa, Endereco, Militar, Empresa, Atirador, Patente, Filiacao, RespostaEnum
 from datetime import datetime
 from io import BytesIO
 import logging
@@ -13,13 +12,12 @@ app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def parse_enum(value, enum_class):
+# Funções auxiliares
+def safe_str(value, max_len=None):
     if value is None or pd.isna(value):
         return None
-    for e in enum_class:
-        if str(e.value) == str(value) or str(e.name) == str(value):
-            return e
-    return None
+    value = str(value).strip()
+    return value[:max_len] if max_len else value
 
 def format_date(value):
     if value is None or pd.isna(value):
@@ -30,34 +28,21 @@ def format_date(value):
         return datetime.strptime(str(value), "%d/%m/%Y").strftime("%Y-%m-%d")
     except ValueError:
         return None
-    
-def safe_str(value, max_len=None):
-    if value is None or pd.isna(value):
-        return None
-    value = str(value).strip()
-    return value[:max_len] if max_len else value
-
-def safe_bool(value):
-    if value is None or pd.isna(value):
-        return False
-    return bool(value)
 
 def parse_bool_sim_nao(valor):
-    if valor is None:
+    if valor is None or pd.isna(valor):
         return False
     valor_str = str(valor).strip().upper()
     return valor_str in ("SIM", "S", "TRUE", "1")
 
-
-
-def parse_enum_sim_nao(valor):
-    if valor is None:
-        return RespostaEnum.NAO  # default
+def parse_estuda(valor):
+    if valor is None or pd.isna(valor):
+        return 'N'
     valor_str = str(valor).strip().upper()
     if valor_str in ("SIM", "S", "TRUE", "1"):
-        return RespostaEnum.SIM
-    else:
-        return RespostaEnum.NAO
+        return 'S'
+    return 'N'
+
 
 @app.post("/upload-atiradores-index/{ano_alistamento}")
 async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -102,13 +87,15 @@ async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(
             "numero": 32,
             "complemento": 33,
             "atirador_trabalha": 34,
-            "nome_empresa": 35,
-            "telefone_empresa": 36,
-            "nome_chefe_ou_responsavel": 37,
-            "rua_empresa": 38,
-            "cep_empresa": 39,
+            "voluntario": 35,
+            "nome_empresa": 36,
+            "telefone_empresa": 37,
+            "nome_chefe_ou_responsavel": 38,
+            "rua_empresa": 39,
+            "cep_empresa": 40,
         }
 
+        # Patente Atirador
         patente = db.query(Patente).filter_by(nome_patente="Atirador").first()
         if not patente:
             patente = Patente(nome_patente="Atirador", imagem_patente="")
@@ -119,18 +106,32 @@ async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(
 
         for index, row in df.iterrows():
             try:
-                endereco = Endereco(
-                rua=safe_str(row.get(col.get("rua")), 50),
-                numero=safe_str(row.get(col.get("numero")), 30),
-                complemento=safe_str(row.get(col.get("complemento")), 100),
-                cep=safe_str(row.get(col.get("cep")), 20),
-                cidade=safe_str(row.get(col.get("cidade_nascimento")), 50),
-                estado=safe_str(row.get(col.get("estado_nascimento")), 3),
-                )
+                # Valores primários
+                ano_alistamento_str = str(ano_alistamento)
+                numero_chamada_str = safe_str(row.get(col.get("numero_chamada")), 10)
 
+                # Verifica duplicidade
+                exists = db.query(Atirador).filter(
+                    Atirador.numero_chamada == numero_chamada_str,
+                    Atirador.ano_alistamento == ano_alistamento_str
+                ).first()
+                if exists:
+                    logger.info(f"Linha {index} ignorada: já existe.")
+                    continue
+
+                # Endereço do atirador
+                endereco = Endereco(
+                    rua=safe_str(row.get(col.get("rua")), 50),
+                    numero=safe_str(row.get(col.get("numero")), 30),
+                    complemento=safe_str(row.get(col.get("complemento")), 100),
+                    cep=safe_str(row.get(col.get("cep")), 20),
+                    cidade=safe_str(row.get(col.get("cidade_nascimento")), 50),
+                    estado=safe_str(row.get(col.get("estado_nascimento")), 3),
+                )
                 db.add(endereco)
                 db.flush()
 
+                # Pessoa
                 pessoa = Pessoa(
                     nome_completo=safe_str(row.get(col.get("nome_completo")), 80),
                     data_nascimento=format_date(row.get(col.get("data_nascimento"))),
@@ -150,11 +151,12 @@ async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(
                     categoria_cnh=safe_str(row.get(col.get("categoria_cnh")), 3),
                     possui_veiculo=parse_bool_sim_nao(row.get(col.get("possui_veiculo"))),
                     meio_de_transporte=safe_str(row.get(col.get("meio_de_transporte")), 60),
-                    id_endereco=endereco.id,
+                    id_endereco=endereco.id
                 )
                 db.add(pessoa)
                 db.flush()
 
+                # Militar
                 militar = Militar(
                     ra=str(row.get(col.get("ra"))) if row.get(col.get("ra")) else None,
                     nome_de_guerra=row.get(col.get("nome_guerra")),
@@ -164,23 +166,25 @@ async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(
                 db.add(militar)
                 db.flush()
 
+                # Endereço empresa
                 endereco_empresa = Endereco(
                     rua=safe_str(row.get(col.get("rua_empresa")), 50),
-                    cep=safe_str(row.get(col.get("cep_empresa")), 15),  
+                    cep=safe_str(row.get(col.get("cep_empresa")), 15)
                 )
                 db.add(endereco_empresa)
                 db.flush()
 
-
+                # Empresa
                 empresa = Empresa(
                     nome=safe_str(row.get(col.get("nome_empresa")), 200),
                     telefone_empresa=safe_str(row.get(col.get("telefone_empresa")), 15),
                     nome_chefe_ou_responsavel=safe_str(row.get(col.get("nome_chefe_ou_responsavel")), 80),
-                    id_endereco=endereco_empresa.id,
+                    id_endereco=endereco_empresa.id
                 )
                 db.add(empresa)
                 db.flush()
 
+                # Filiação
                 filiacao = Filiacao(
                     nome_mae=safe_str(row.get(col.get("nome_mae")), 100),
                     telefone_mae=safe_str(row.get(col.get("telefone_mae")), 20),
@@ -190,26 +194,26 @@ async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(
                 db.add(filiacao)
                 db.flush()
 
+                # Atirador
                 atirador = Atirador(
-                    numero_chamada=safe_str(row.get(col.get("numero_chamada")), 10),
+                    numero_chamada=numero_chamada_str,
                     pelotao=safe_str(row.get(col.get("pelotao")), 20),
-                    estuda=parse_enum_sim_nao(row.get(col.get("estuda"))),  # enum mesmo
-                    voluntario=parse_bool_sim_nao(row.get(col.get("voluntario"))),  # booleano
-                    atirador_trabalha=parse_bool_sim_nao(row.get(col.get("atirador_trabalha"))),  # booleano
+                    estuda=parse_estuda(row.get(col.get("estuda"))),
+                    voluntario=parse_bool_sim_nao(row.get(col.get("voluntario"))),
+                    atirador_trabalha=parse_bool_sim_nao(row.get(col.get("atirador_trabalha"))),
                     militar=militar,
                     empresa=empresa,
                     filiacao=filiacao,
-                    ano_alistamento=ano_alistamento,
+                    ano_alistamento=ano_alistamento_str,
                     relacao_quem_mora_junto=safe_str(row.get(col.get("relacao_quem_mora_junto")), 12) or "N/A",
                     nome_quem_mora_junto=safe_str(row.get(col.get("nome_quem_mora_junto")), 80) or "N/A",
                     confiabilidade_de_dado=True,
                     possui_fatd=False,
-                    pontos_fatd=0
+                    pontos_fatd=0,
+                    instituicao_onde_estuda=safe_str(row.get(col.get("instituicao_onde_estuda")), 60) or "N/A"
                 )
-
                 db.add(atirador)
                 db.flush()
-
                 inserted += 1
 
             except Exception as e:

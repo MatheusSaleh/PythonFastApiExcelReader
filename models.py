@@ -123,7 +123,7 @@ class Atirador(Base):
     relacao_quem_mora_junto = Column(String)
     nome_quem_mora_junto = Column(String)
     telefone_quem_mora_junto = Column(String)
-    estuda = Column(Enum(RespostaEnum, name="respostaenum", create_type=False))
+    estuda = Column(String(5)) 
     instituicao_onde_estuda = Column(String)
     foto = Column(String)
     voluntario = Column(Boolean)
