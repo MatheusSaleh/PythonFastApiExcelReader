@@ -1,13 +1,22 @@
-from fastapi import FastAPI, UploadFile, File, Depends
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Depends, status
 from sqlalchemy.orm import Session
 import pandas as pd
 from database import get_db
-from models import Pessoa, Endereco, Militar, Empresa, Atirador, Patente, Filiacao, RespostaEnum
+from models import Pessoa, Endereco, Militar, Empresa, Atirador, Patente, Filiacao
 from datetime import datetime
 from io import BytesIO
+from fastapi import Depends
 import logging
+from fastapi.security import HTTPBearer
+from fastapi.openapi.utils import get_openapi
+
+from security_token import verify_jwt_token
 
 app = FastAPI()
+
+bearer_scheme = HTTPBearer()
+
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,9 +52,42 @@ def parse_estuda(valor):
         return 'S'
     return 'N'
 
+def get_current_user(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente")
+    token = auth_header.split(" ")[1]
+    return verify_jwt_token(token)
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Meu Serviço de Upload",
+        version="1.0.0",
+        description="API de leitura de planilhas",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+    openapi_schema["security"] = [{"BearerAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 @app.post("/upload-atiradores-index/{ano_alistamento}")
-async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_atiradores_index(
+    ano_alistamento: int, 
+    file: UploadFile = File(...), 
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+    ):
     try:
         contents = await file.read()
         df = pd.read_excel(BytesIO(contents), header=None)
@@ -210,7 +252,14 @@ async def upload_atiradores_index(ano_alistamento: int, file: UploadFile = File(
                     confiabilidade_de_dado=True,
                     possui_fatd=False,
                     pontos_fatd=0,
-                    instituicao_onde_estuda=safe_str(row.get(col.get("instituicao_onde_estuda")), 60) or "N/A"
+                    instituicao_onde_estuda=safe_str(row.get(col.get("instituicao_onde_estuda")), 60) or "N/A",
+                    fezcfc=False,
+                    fezinspecaodesaude=False,
+                    fezcompromissoabandeira=False,
+                    foiatiradordestaquedoanodeinstrucao=False,
+                    foimelhoratiradorcombatente=False,
+                    temhonraaomerito=False,
+                    foipromovidocabo=False
                 )
                 db.add(atirador)
                 db.flush()
