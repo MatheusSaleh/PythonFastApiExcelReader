@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DB_URL = "postgresql+psycopg2://saleh:sagi@localhost:5432/tiro_de_guerra"
+DB_URL = "postgresql+psycopg2://saleh:sagi@host.docker.internal:5432/tiro_de_guerra"
 
 engine = create_engine(DB_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
